@@ -2,6 +2,7 @@ from discord.ext import commands
 from .utils import checks
 from .utils.dataIO import dataIO
 from datetime import datetime as dt
+from datetime import timedelta, timezone
 import asyncio
 import aiohttp
 import discord
@@ -35,8 +36,8 @@ class DestinyLFG():
     async def games_menu(self, ctx, event_list: list,
                          message: discord.Message=None,
                          page=0, timeout: int=30):
-        """menu control logic for this taken from
-           https://github.com/Lunar-Dust/Dusty-Cogs/blob/master/menu/menu.py"""
+        """Menu control logic for this taken from
+           https://github.com/Lunar-Dust/Dusty-Cogs/blob/master/menu/menu.py """
         emb = event_list[page]
         if not message:
             message =\
@@ -79,7 +80,7 @@ class DestinyLFG():
 
     @commands.command(pass_context=True)
     async def lfgcreate(self, ctx):
-        """Wizard-style event creation tool. The event will only be created if
+        """Wizard-style destiny lfg creation tool. The event will only be created if
         all information is provided properly
         """
         author = ctx.message.author
@@ -110,6 +111,15 @@ class DestinyLFG():
             return
         name = msg.content
         msg = None
+        await self.bot.say(
+            "Enter the time and date (ex. HH:MM am/pm tz MM/DD): ")
+        msg = await self.bot.wait_for_message(author=author, timeout=30)
+        if msg is None:
+            await self.bot.say("No game time provided!")
+            return
+        gametime = self.game_time(creation_time, msg)
+        await self.bot.say("{}".format(
+            str(gametime)))
         await self.bot.say(
             "Enter the amount of time from now the event will take place (ex. 1w, 3d 12h, 1y 2w): ")
         msg = await self.bot.wait_for_message(author=author, timeout=30)
@@ -166,7 +176,7 @@ class DestinyLFG():
 
     @commands.command(pass_context=True)
     async def joinlfg(self, ctx, event_id: int):
-        """Join the specified event"""
+        """Join the specified lfg game"""
         server = ctx.message.server
         for event in self.events[server.id]:
             if event["id"] == event_id:
@@ -205,8 +215,8 @@ class DestinyLFG():
                 break
 
     @commands.command(pass_context=True)
-    async def gameslist(self, ctx, *, timezone: str="UTC"):
-        """List events for this server that have not started yet
+    async def gameslistlfg(self, ctx, *, timezone: str="UTC"):
+        """List lfg for this server that have not started yet
         Timezone needs to be something from the third column of
         the large table at https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"""
         server = ctx.message.server
@@ -237,8 +247,8 @@ class DestinyLFG():
             await self.games_menu(ctx, events, message=None, page=0, timeout=30)
 
     @commands.command(pass_context=True)
-    async def whojoined(self, ctx, event_id: int):
-        """List all participants of the event"""
+    async def whojoinedlfg(self, ctx, event_id: int):
+        """List all participants of the destiny lfg"""
         server = ctx.message.server
         for event in self.events[server.id]:
             if event["id"] == event_id:
@@ -254,7 +264,7 @@ class DestinyLFG():
 
     @commands.command(pass_context=True)
     async def cancellfg(self, ctx, event_id: int):
-        """Cancels the specified event"""
+        """Cancels the specified destiny lfg"""
         server = ctx.message.server
         if event_id < self.settings[server.id]["next_id"]:
             to_remove =\
@@ -270,6 +280,20 @@ class DestinyLFG():
         else:
             await self.bot.say("I can't remove an event that " +
                                "hasn't been created yet!")
+
+    def game_time(self, cur_time, msg: discord.Message):
+        """Parse the time"""
+        start_time = calendar.timegm(cur_time.utctimetuple())
+        content = msg.content
+        t, ampm, tzone, d = content.split(" ")
+        hour, minute = t.split(":")
+        month, day = d.split("/")
+        CDT = timezone(timedelta(hours=-5))
+        try:
+            start_time = dt(2017, int(month), int(day), int(hour), int(minute), tzinfo=CDT)
+        except ValueError:
+            return None  # issue with the user's input
+        return start_time
 
     def parse_time(self, cur_time, msg: discord.Message):
         """Parse the time"""
@@ -313,14 +337,14 @@ class DestinyLFG():
 
     @commands.group(pass_context=True)
     @checks.admin_or_permissions(manage_server=True)
-    async def gameset(self, ctx):
-        """Event maker settings"""
+    async def game_set(self, ctx):
+        """Destiny lfg settings"""
         if ctx.invoked_subcommand is None:
             await self.bot.send_cmd_help(ctx)
 
-    @gameset.command(pass_context=True, name="channel")
+    @game_set.command(pass_context=True, name="channel")
     @checks.admin_or_permissions(manage_server=True)
-    async def gameset_channel(self, ctx, channel: discord.Channel):
+    async def game_set_channel(self, ctx, channel: discord.Channel):
         """Set the channel used for displaying reminders. If 'channel'
         is selected for reminders on event creation, this channel
         will be used. Default: the server's default channel"""
@@ -330,9 +354,9 @@ class DestinyLFG():
                          self.settings)
         await self.bot.say("Channel set to {}".format(channel.mention))
 
-    @gameset.command(pass_context=True, name="role")
+    @game_set.command(pass_context=True, name="role")
     @checks.admin_or_permissions(manage_server=True)
-    async def gameset_role(self, ctx, *, role: str=None):
+    async def game_set_role(self, ctx, *, role: str=None):
         """Set the role allowed to create events. Default
         is for everyone to be able to create events"""
         server = ctx.message.server
