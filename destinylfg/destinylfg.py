@@ -9,6 +9,7 @@ import discord
 import os
 import calendar
 import pytz
+import re
 
 
 numbs = {
@@ -16,6 +17,12 @@ numbs = {
     "back": "⬅",
     "exit": "❌"
 }
+
+# Define timezones
+eastern = pytz.timezone('US/Eastern')
+central = pytz.timezone('US/Central')
+mountain = pytz.timezone("US/Mountain")
+pacific = pytz.timezone('US/Pacific')
 
 
 class DestinyLFG():
@@ -104,43 +111,61 @@ class DestinyLFG():
                 return
 
         creation_time = dt.utcnow()
-        await self.bot.say("Enter a name for the event: ")
-        msg = await self.bot.wait_for_message(author=author, timeout=30)
-        if msg is None:
+        # Get name for game
+        bot_msg = await self.bot.say("Enter a name for the event: ")
+        rsp_msg = await self.bot.wait_for_message(author=author, timeout=30)
+        if rsp_msg is None:
             await self.bot.say("No name provided!")
             return
-        name = msg.content
-        msg = None
-        await self.bot.say(
+        name = rsp_msg.content
+        await self.bot.delete_message(bot_msg)
+        await self.bot.delete_message(rsp_msg)
+        # Get date and time for game
+        bot_msg = None
+        rsp_msg = None
+        bot_msg = await self.bot.say(
             "Enter the time and date (ex. HH:MM am/pm tz MM/DD): ")
-        msg = await self.bot.wait_for_message(author=author, timeout=30)
-        if msg is None:
+        rsp_msg = await self.bot.wait_for_message(author=author, timeout=45)
+        if rsp_msg is None:
             await self.bot.say("No game time provided!")
             return
-        gametime = self.game_time(creation_time, msg)
-        await self.bot.say("{}".format(
-            str(gametime)))
-        await self.bot.say(
-            "Enter the amount of time from now the event will take place (ex. 1w, 3d 12h, 1y 2w): ")
-        msg = await self.bot.wait_for_message(author=author, timeout=30)
-        if msg is None:
-            await self.bot.say("No start time provided!")
+        gametime = self.game_time(creation_time, rsp_msg)
+        #  await self.bot.say("{}".format(str(gametime)))
+        if gametime is None:
+            await self.bot.say("Something went wrong with parsing the date and time you entered!")
             return
-        start_time = self.parse_time(creation_time, msg)
+        await self.bot.delete_message(bot_msg)
+        await self.bot.delete_message(rsp_msg)
+        # REMOVE - get event time
+        # msg = None
+        # await self.bot.say(
+        #     "Enter the amount of time from now the event will take place (ex. 1w, 3d 12h, 1y 2w): ")
+        # msg = await self.bot.wait_for_message(author=author, timeout=15)
+        # if msg is None:
+        #     await self.bot.say("No start time provided!")
+        #     return
+        # start_time = self.parse_time(creation_time, msg)
+        start_time = gametime
         if start_time is None:
             await self.bot.say("Something went wrong with parsing the time you entered!")
             return
-        msg = None
-        await self.bot.say("Enter a description for the event: ")
-        msg = await self.bot.wait_for_message(author=author, timeout=30)
-        if msg is None:
+        # await self.bot.say("{}".format(
+        #     str(start_time)))
+        # Get game descriptions
+        bot_msg = None
+        rsp_msg = None
+        bot_msg = await self.bot.say("Enter a description for the event: ")
+        rsp_msg = await self.bot.wait_for_message(author=author, timeout=30)
+        if rsp_msg is None:
             await self.bot.say("No description provided!")
             return
-        if len(msg.content) > 750:
+        if len(rsp_msg.content) > 750:
             await self.bot.say("Your description is too long!")
             return
         else:
-            desc = msg.content
+            desc = rsp_msg.content
+        await self.bot.delete_message(bot_msg)
+        await self.bot.delete_message(rsp_msg)
 
         new_event = {
             "id": self.settings[server.id]["next_id"],
@@ -166,12 +191,12 @@ class DestinyLFG():
                           self.bot.get_all_members(),
                           id=new_event["creator"]))
         emb.set_footer(
-            text="Created at (UTC) " + dt.utcfromtimestamp(
-                new_event["create_time"]).strftime("%Y-%m-%d %H:%M:%S"))
+            text="Created at (CT) " + dt.fromtimestamp(
+                new_event["create_time"],central).strftime("%m/%d/%Y %I:%M"))
         emb.add_field(name="Event ID", value=str(new_event["id"]))
         emb.add_field(
-            name="Start time (UTC)", value=dt.utcfromtimestamp(
-                new_event["event_start_time"]))
+            name="Start time (CT)", value=dt.fromtimestamp(
+                new_event["event_start_time"],central).strftime("%m/%d/%Y %I:%M"))
         await self.bot.say(embed=emb)
 
     @commands.command(pass_context=True)
@@ -223,23 +248,32 @@ class DestinyLFG():
         events = []
         for event in self.events[server.id]:
             if not event["has_started"]:
+                et_str = dt.fromtimestamp(
+                    event["create_time"], eastern).strftime("%I:%M %p %Z")
+                ct_str = dt.fromtimestamp(
+                    event["create_time"], central).strftime("%I:%M %p %Z")
+                pt_str = dt.fromtimestamp(
+                    event["create_time"], pacific).strftime("%m/%d/%Y %I:%M %p %Z")
                 emb = discord.Embed(title=event["event_name"],
-                                    description=event["description"],
-                                    url="https://time.is/UTC")
+                                    description=event["description"])
                 emb.add_field(name="Created by",
                               value=discord.utils.get(
                                   self.bot.get_all_members(),
                                   id=event["creator"]))
+                # emb.set_footer(
+                #     text="Created at (CT) " + dt.fromtimestamp(
+                #         event["create_time"], central).strftime("%m/%d/%Y %H:%M"))
                 emb.set_footer(
-                    text="Created at (UTC) " + dt.utcfromtimestamp(
-                        event["create_time"]).strftime("%Y-%m-%d %H:%M:%S"))
+                    text="Start time: " + et_str + ", " + ct_str)
                 emb.add_field(name="Event ID", value=str(event["id"]))
                 emb.add_field(
                     name="Participant count", value=str(
                         len(event["participants"])))
+                # emb.add_field(
+                #     name="Start time (CT)", value=dt.fromtimestamp(
+                #         event["event_start_time"], central).strftime("%m/%d/%Y %H:%M"))
                 emb.add_field(
-                    name="Start time (UTC)", value=dt.utcfromtimestamp(
-                        event["event_start_time"]))
+                    name="Start time ", value=pt_str)
                 events.append(emb)
         if len(events) == 0:
             await self.bot.say("No events available to join!")
@@ -285,12 +319,30 @@ class DestinyLFG():
         """Parse the time"""
         start_time = calendar.timegm(cur_time.utctimetuple())
         content = msg.content
-        t, ampm, tzone, d = content.split(" ")
-        hour, minute = t.split(":")
-        month, day = d.split("/")
-        CDT = timezone(timedelta(hours=-5))
+        # CDT = timezone(timedelta(hours=-5))
         try:
-            start_time = dt(2017, int(month), int(day), int(hour), int(minute), tzinfo=CDT)
+            t, ampm, tzone, d = content.split(" ")
+            hour, minute = t.split(":")
+            month, day = d.split("/")
+            # AM or PM
+            if ampm.lower() == "pm":
+                hour = int(hour) + 12
+            # Set Timezone
+            tzone = tzone.lower()
+            if re.match("p.*t", tzone) is not None:
+                tzone = pacific
+            elif re.match("e.*t", tzone) is not None:
+                tzone = eastern
+            elif re.match("c.*t", tzone) is not None:
+                tzone = central
+            elif re.match("m.*t", tzone) is not None:
+                tzone = mountain
+            else:
+                raise ValueError('Timezone incorrect or not supported')
+            #  start_time = dt(2017, int(month), int(day), int(hour), int(minute), tzinfo=tzone)
+            start_time = dt(2017, int(month), int(day), int(hour), int(minute))
+            start_time = tzone.localize(start_time)
+            start_time = calendar.timegm(start_time.utctimetuple())
         except ValueError:
             return None  # issue with the user's input
         return start_time
@@ -398,7 +450,7 @@ class DestinyLFG():
                             text="Created at (UTC) " +
                             dt.utcfromtimestamp(
                                 event["create_time"]).strftime(
-                                    "%Y-%m-%d %H:%M:%S"))
+                                    "%m/%d/%Y %I:%M"))
                         emb.add_field(name="Event ID", value=str(event["id"]))
                         emb.add_field(
                             name="Participant count", value=str(
