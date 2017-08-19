@@ -24,9 +24,14 @@ central = pytz.timezone('US/Central')
 mountain = pytz.timezone("US/Mountain")
 pacific = pytz.timezone('US/Pacific')
 
+""" Cog based heavily off of the cog
+    https://github.com/palmtree5/palmtree5-cogs/blob/master/eventmaker/eventmaker.py
+    Cog as been altered to cater more towards Destiny.
+    Layout of games and messages has also been changed."""
+
 
 class DestinyLFG():
-    """A tool for creating events inside of Discord. Anyone can
+    """A tool for creating Destiny games inside of Discord. Anyone can
     create an event by default. If a specific role has been
     specified, users must have that role, the server's mod or
     admin role, or be the server owner to create events. Reminders
@@ -92,6 +97,7 @@ class DestinyLFG():
         """
         author = ctx.message.author
         server = ctx.message.server
+        await self.bot.delete_message(ctx.message)
         allowed_roles = []
         server_owner = server.owner
         if server.id in self.settings:
@@ -111,7 +117,10 @@ class DestinyLFG():
                 return
 
         creation_time = dt.utcnow()
-        # Get name for game
+        creation_time = calendar.timegm(creation_time.utctimetuple())
+        #####################
+        # Get name for game #
+        #####################
         bot_msg = await self.bot.say("Enter a name for the event: ")
         rsp_msg = await self.bot.wait_for_message(author=author, timeout=30)
         if rsp_msg is None:
@@ -120,38 +129,9 @@ class DestinyLFG():
         name = rsp_msg.content
         await self.bot.delete_message(bot_msg)
         await self.bot.delete_message(rsp_msg)
-        # Get date and time for game
-        bot_msg = None
-        rsp_msg = None
-        bot_msg = await self.bot.say(
-            "Enter the time and date (ex. HH:MM am/pm tz MM/DD): ")
-        rsp_msg = await self.bot.wait_for_message(author=author, timeout=45)
-        if rsp_msg is None:
-            await self.bot.say("No game time provided!")
-            return
-        gametime = self.game_time(creation_time, rsp_msg)
-        #  await self.bot.say("{}".format(str(gametime)))
-        if gametime is None:
-            await self.bot.say("Something went wrong with parsing the date and time you entered!")
-            return
-        await self.bot.delete_message(bot_msg)
-        await self.bot.delete_message(rsp_msg)
-        # REMOVE - get event time
-        # msg = None
-        # await self.bot.say(
-        #     "Enter the amount of time from now the event will take place (ex. 1w, 3d 12h, 1y 2w): ")
-        # msg = await self.bot.wait_for_message(author=author, timeout=15)
-        # if msg is None:
-        #     await self.bot.say("No start time provided!")
-        #     return
-        # start_time = self.parse_time(creation_time, msg)
-        start_time = gametime
-        if start_time is None:
-            await self.bot.say("Something went wrong with parsing the time you entered!")
-            return
-        # await self.bot.say("{}".format(
-        #     str(start_time)))
-        # Get game descriptions
+        #########################
+        # Get game descriptions #
+        #########################
         bot_msg = None
         rsp_msg = None
         bot_msg = await self.bot.say("Enter a description for the event: ")
@@ -166,11 +146,33 @@ class DestinyLFG():
             desc = rsp_msg.content
         await self.bot.delete_message(bot_msg)
         await self.bot.delete_message(rsp_msg)
+        ##############################
+        # Get date and time for game #
+        ##############################
+        bot_msg = None
+        rsp_msg = None
+        bot_msg = await self.bot.say(
+            "Enter the time and date (ex. HH:MM am/pm tz MM/DD): ")
+        rsp_msg = await self.bot.wait_for_message(author=author, timeout=45)
+        if rsp_msg is None:
+            await self.bot.say("No game time provided!")
+            return
+        start_time = self.game_time(rsp_msg)
+        if start_time is None:
+            await self.bot.say("Something went wrong with parsing the date and time you entered!")
+            return
+        if start_time < creation_time:
+            bot_msg = await self.bot.say("You entered a time in the past!")
+            await asyncio.sleep(20)
+            await self.bot.delete_message(bot_msg)
+            return
+        await self.bot.delete_message(bot_msg)
+        await self.bot.delete_message(rsp_msg)
 
         new_event = {
             "id": self.settings[server.id]["next_id"],
             "creator": author.id,
-            "create_time": calendar.timegm(creation_time.utctimetuple()),
+            "create_time": creation_time,  # calendar.timegm(creation_time.utctimetuple()),
             "event_name": name,
             "event_start_time": start_time,
             "description": desc,
@@ -185,18 +187,21 @@ class DestinyLFG():
             os.path.join("data", "destinylfg", "events.json"), self.events)
         emb = discord.Embed(title=new_event["event_name"],
                             description=new_event["description"],
-                            url="https://time.is/UTC")
-        emb.add_field(name="Created by",
-                      value=discord.utils.get(
-                          self.bot.get_all_members(),
-                          id=new_event["creator"]))
+                            color=discord.Colour(0x206694))
+        # emb.add_field(name="Created by",
+        #               value=discord.utils.get(
+        #                   self.bot.get_all_members(),
+        #                   id=new_event["creator"]))
+        # emb.add_field(name="Created by",
+        #               value=author.name)
         emb.set_footer(
-            text="Created at (CT) " + dt.fromtimestamp(
-                new_event["create_time"],central).strftime("%m/%d/%Y %I:%M"))
-        emb.add_field(name="Event ID", value=str(new_event["id"]))
+            text="Created: " + dt.fromtimestamp(
+                new_event["create_time"], central).strftime("%m/%d/%Y %I:%M %p %Z ") +
+                        "by " + author.name)
         emb.add_field(
-            name="Start time (CT)", value=dt.fromtimestamp(
-                new_event["event_start_time"],central).strftime("%m/%d/%Y %I:%M"))
+            name="Start time: ", value=dt.fromtimestamp(
+                new_event["event_start_time"], central).strftime("%I:%M %p %m/%d %Z  "))
+        emb.add_field(name="Game ID", value=str(new_event["id"]))
         await self.bot.say(embed=emb)
 
     @commands.command(pass_context=True)
@@ -253,30 +258,38 @@ class DestinyLFG():
                 ct_str = dt.fromtimestamp(
                     event["create_time"], central).strftime("%I:%M %p %Z")
                 pt_str = dt.fromtimestamp(
-                    event["create_time"], pacific).strftime("%m/%d/%Y %I:%M %p %Z")
+                    event["create_time"], pacific).strftime("%m/%d %I:%M %p %Z")
                 emb = discord.Embed(title=event["event_name"],
-                                    description=event["description"])
+                                    description=event["description"],
+                                    color=discord.Colour(0x206694))
                 emb.add_field(name="Created by",
-                              value=discord.utils.get(
+                              value=(discord.utils.get(
                                   self.bot.get_all_members(),
-                                  id=event["creator"]))
+                                  id=event["creator"])).name)
                 # emb.set_footer(
                 #     text="Created at (CT) " + dt.fromtimestamp(
                 #         event["create_time"], central).strftime("%m/%d/%Y %H:%M"))
                 emb.set_footer(
                     text="Start time: " + et_str + ", " + ct_str)
-                emb.add_field(name="Event ID", value=str(event["id"]))
                 emb.add_field(
-                    name="Participant count", value=str(
-                        len(event["participants"])))
+                    name="Start time ", value=pt_str)
+                emb.add_field(name="Game ID", value=str(event["id"]))
+                player_str = ""
+                for user in event["participants"]:
+                    target = (discord.utils.get(
+                        self.bot.get_all_members(), id=user)).name
+                    player_str += target + " "
+                # emb.add_field(
+                #     name="Participant count", value=str(
+                #         len(event["participants"])))
+                emb.add_field(
+                    name="Players", value=player_str)
                 # emb.add_field(
                 #     name="Start time (CT)", value=dt.fromtimestamp(
                 #         event["event_start_time"], central).strftime("%m/%d/%Y %H:%M"))
-                emb.add_field(
-                    name="Start time ", value=pt_str)
                 events.append(emb)
         if len(events) == 0:
-            await self.bot.say("No events available to join!")
+            await self.bot.say("No games available to join!")
         else:
             await self.games_menu(ctx, events, message=None, page=0, timeout=30)
 
@@ -315,9 +328,9 @@ class DestinyLFG():
             await self.bot.say("I can't remove an event that " +
                                "hasn't been created yet!")
 
-    def game_time(self, cur_time, msg: discord.Message):
+    def game_time(self, msg: discord.Message):
         """Parse the time"""
-        start_time = calendar.timegm(cur_time.utctimetuple())
+        # start_time = calendar.timegm(cur_time.utctimetuple())
         content = msg.content
         # CDT = timezone(timedelta(hours=-5))
         try:
@@ -345,46 +358,6 @@ class DestinyLFG():
             start_time = calendar.timegm(start_time.utctimetuple())
         except ValueError:
             return None  # issue with the user's input
-        return start_time
-
-    def parse_time(self, cur_time, msg: discord.Message):
-        """Parse the time"""
-        start_time = calendar.timegm(cur_time.utctimetuple())
-        content = msg.content
-        pieces = content.split()
-        for piece in pieces:
-            if piece.endswith("y"):
-                try:
-                    start_time += int(piece[:-1]) * 31536000  # seconds per year
-                except ValueError:
-                    return None  # issue with the user's input
-            elif piece.endswith("w"):
-                try:
-                    start_time += int(piece[:-1]) * 604800  # seconds per week
-                except ValueError:
-                    return None  # issue with the user's input
-            elif piece.endswith("d"):
-                try:
-                    start_time += int(piece[:-1]) * 86400  # seconds per day
-                except ValueError:
-                    return None  # issue with the user's input
-            elif piece.endswith("h"):
-                try:
-                    start_time += int(piece[:-1]) * 3600  # seconds per hour
-                except ValueError:
-                    return None  # issue with the user's input
-            elif piece.endswith("m"):
-                try:
-                    start_time += int(piece[:-1]) * 60  # seconds per minute
-                except ValueError:
-                    return None  # issue with the user's input
-            elif piece.endswith("s"):
-                try:
-                    start_time += int(piece[:-1]) * 1  # seconds per second
-                except ValueError:
-                    return None  # issue with the user's input
-            else:
-                return None  # something went wrong in user's input
         return start_time
 
     @commands.group(pass_context=True)
@@ -441,21 +414,39 @@ class DestinyLFG():
                     if cur_time >= event["event_start_time"]\
                             and not event["has_started"]:
                         emb = discord.Embed(title=event["event_name"],
-                                            description=event["description"])
+                                            description=event["description"],
+                                            color=discord.Colour(0x206694))
                         emb.add_field(name="Created by",
-                                      value=discord.utils.get(
+                                      value=(discord.utils.get(
                                           self.bot.get_all_members(),
-                                          id=event["creator"]))
-                        emb.set_footer(
-                            text="Created at (UTC) " +
-                            dt.utcfromtimestamp(
-                                event["create_time"]).strftime(
-                                    "%m/%d/%Y %I:%M"))
-                        emb.add_field(name="Event ID", value=str(event["id"]))
+                                          id=event["creator"])).name)
+                        pt_str = dt.fromtimestamp(
+                            event["create_time"], pacific).strftime("%m/%d %I:%M %p %Z")
                         emb.add_field(
-                            name="Participant count", value=str(
-                                len(event["participants"])))
+                            name="Start time ", value=pt_str)
+                        emb.set_footer(
+                            text="Created: " +
+                            dt.fromtimestamp(
+                                event["create_time"], central).strftime(
+                                    "%m/%d/%Y %I:%M %p %Z"))
+                        emb.add_field(name="Game ID", value=str(event["id"]))
+                        # emb.add_field(
+                        #     name="Participant count", value=str(
+                        #         len(event["participants"])))
+                        player_str = ""
+                        player_mention_str = "Your game is starting! Join up: "
+                        for user in event["participants"]:
+                            target = discord.utils.get(
+                                self.bot.get_all_members(), id=user)
+                            player_str += target.name + " "
+                            player_mention_str += target.mention + " "
+                        # emb.add_field(
+                        #     name="Participant count", value=str(
+                        #         len(event["participants"])))
+                        emb.add_field(
+                            name="Players", value=player_str)
                         try:
+                            await self.bot.send_message(channel, player_mention_str)
                             await self.bot.send_message(channel, embed=emb)
                         except discord.Forbidden:
                             pass  # No permissions to send messages
