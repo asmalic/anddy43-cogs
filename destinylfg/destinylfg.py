@@ -18,6 +18,26 @@ numbs = {
     "exit": "❌"
 }
 
+gametype = {
+    "pve": "🇪",  # E
+    "pvp": "🇵",  # P
+}
+
+pvp_activity = {
+    "casual": "⚒",
+    "competitive": "⚔",
+    "trials": "🥇"
+}
+
+pve_activity = {
+    "raid": "🇷",      # R
+    "strikes": "🇸",   # S
+    "missions": "🇲",  # M
+    "patrol": "🇵",    # P
+    "other": "🇴"      # O
+}
+
+
 # Define timezones
 eastern = pytz.timezone('US/Eastern')
 central = pytz.timezone('US/Central')
@@ -44,6 +64,36 @@ class DestinyLFG():
             os.path.join("data", "destinylfg", "events.json"))
         self.settings = dataIO.load_json(
             os.path.join("data", "destinylfg", "settings.json"))
+
+    async def select_menu(self, ctx, emoji_dict: dict,
+                          text: str, timeout: int=30):
+        emb = discord.Embed(title=text,
+                            color=discord.Colour(0xf1c40f))
+        # for name in emoji_dict:
+        #     emb.add_field(
+        #         name=emoji_dict[name], value=name)
+        bot_msg = await self.bot.send_message(ctx.message.channel, embed=emb)
+        await self.bot.add_reaction(bot_msg, "⬅")
+        await self.bot.add_reaction(bot_msg, "❌")
+        await self.bot.add_reaction(bot_msg, "➡")
+        react = await self.bot.wait_for_reaction(
+            message=bot_msg, user=ctx.message.author, timeout=timeout,
+            emoji=["➡", "⬅", "❌"]
+        )
+        return bot_msg
+        # for name in emoji_dict:
+        #     await self.bot.add_reaction(bot_msg, emoji_dict[name])
+        # react = await self.bot.wait_for_reaction(
+        #     message=bot_msg, user=ctx.message.author, timeout=timeout,
+        #     emoji=emoji_dict.values()
+        # )
+        # if react is None:
+        #     for name in emoji_dict:
+        #         await self.bot.remove_reaction(bot_msg, emoji_dict[name], self.bot.user)
+        #     return None
+        # reacts = {v: k for k, v in emoji_dict.items()}
+        # return reacts[react.reaction.emoji]
+
 
     async def games_menu(self, ctx, event_list: list,
                          message: discord.Message=None,
@@ -146,6 +196,31 @@ class DestinyLFG():
             desc = rsp_msg.content
         await self.bot.delete_message(bot_msg)
         await self.bot.delete_message(rsp_msg)
+        #############################
+        # Select game activity type #
+        #############################
+        bot_msg = None
+        rsp_msg = None
+        menu_str = "Select a game type"
+        #  react = self.select_menu(ctx, gametype, menu_str, timeout=30)
+        emb = discord.Embed(title=menu_str,
+                            color=discord.Colour(0xf1c40f))
+        for name in gametype:
+            emb.add_field(
+                name=gametype[name], value=name)
+        bot_msg = await self.bot.send_message(ctx.message.channel, embed=emb)
+        for name in gametype:
+            await self.bot.add_reaction(bot_msg, gametype[name])
+        react = await self.bot.wait_for_reaction(
+            message=bot_msg, user=ctx.message.author, timeout=30,
+            emoji=gametype.values()
+        )
+        if react is None:
+            for name in gametype:
+                await self.bot.remove_reaction(bot_msg, gametype[name], self.bot.user)
+            return None
+        reacts = {v: k for k, v in gametype.items()}
+        await self.bot.say(reacts[react.reaction.emoji])
         ##############################
         # Get date and time for game #
         ##############################
