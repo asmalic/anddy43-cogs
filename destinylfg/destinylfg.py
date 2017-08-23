@@ -19,22 +19,24 @@ numbs = {
 }
 
 gametype = {
-    "pve": "🇪",  # E
-    "pvp": "🇵",  # P
+    "PvE": "🇪",  # E
+    "PvP": "🇵",  # P
 }
 
 pvp_activity = {
-    "casual": "⚒",
-    "competitive": "⚔",
-    "trials": "🥇"
+    "Casual - PvP": "⚒",
+    "Competitive - PvP": "⚔",
+    "Trials of Osiris": "🥇",
+    "Other - PvP": "🇴"
 }
 
 pve_activity = {
-    "raid": "🇷",      # R
-    "strikes": "🇸",   # S
-    "missions": "🇲",  # M
-    "patrol": "🇵",    # P
-    "other": "🇴"      # O
+    "Raid": "🇷",       # R
+    "Nightfall": "🇳",  # N
+    "Strikes": "🇸",    # S
+    "Missions": "🇲",   # M
+    "Patrol": "🇵",     # P
+    "Other": "🇴"       # O
 }
 
 
@@ -93,7 +95,6 @@ class DestinyLFG():
         #     return None
         # reacts = {v: k for k, v in emoji_dict.items()}
         # return reacts[react.reaction.emoji]
-
 
     async def games_menu(self, ctx, event_list: list,
                          message: discord.Message=None,
@@ -176,14 +177,14 @@ class DestinyLFG():
         if rsp_msg is None:
             await self.bot.say("No name provided!")
             return
-        name = rsp_msg.content
+        game_name = rsp_msg.content
         await self.bot.delete_message(bot_msg)
         await self.bot.delete_message(rsp_msg)
         #########################
         # Get game descriptions #
         #########################
-        bot_msg = None
-        rsp_msg = None
+        # bot_msg = None
+        # rsp_msg = None
         bot_msg = await self.bot.say("Enter a description for the event: ")
         rsp_msg = await self.bot.wait_for_message(author=author, timeout=30)
         if rsp_msg is None:
@@ -199,8 +200,8 @@ class DestinyLFG():
         #############################
         # Select game activity type #
         #############################
-        bot_msg = None
-        rsp_msg = None
+        # bot_msg = None
+        # rsp_msg = None
         menu_str = "Select a game type"
         #  react = self.select_menu(ctx, gametype, menu_str, timeout=30)
         emb = discord.Embed(title=menu_str,
@@ -216,30 +217,76 @@ class DestinyLFG():
             emoji=gametype.values()
         )
         if react is None:
-            for name in gametype:
-                await self.bot.remove_reaction(bot_msg, gametype[name], self.bot.user)
+            # for name in gametype:
+            #     await self.bot.remove_reaction(bot_msg, gametype[name], self.bot.user)
+            await self.bot.delete_message(bot_msg)
+            await self.bot.say("No game type selected!")
             return None
         reacts = {v: k for k, v in gametype.items()}
+        activity_group = reacts[react.reaction.emoji]
+        # await self.bot.remove_reaction(bot_msg, gametype[activity_group], react.user)
+        await self.bot.delete_message(bot_msg)
         await self.bot.say(reacts[react.reaction.emoji])
+        #############################
+        # Select specific game type #
+        #############################
+        # bot_msg = None
+        # rsp_msg = None
+        menu_str = "Select a game type"
+        if activity_group == "PvE":
+            emb = discord.Embed(title=menu_str,
+                                color=discord.Colour(0x1f8b4c))
+            activity_group_dict = pve_activity
+        else:
+            emb = discord.Embed(title=menu_str,
+                                color=discord.Colour(0x992d22))
+            activity_group_dict = pvp_activity
+        for name in activity_group_dict:
+            emb.add_field(
+                name=activity_group_dict[name], value=name, inline=False)
+        bot_msg = await self.bot.send_message(ctx.message.channel, embed=emb)
+        for name in activity_group_dict:
+            await self.bot.add_reaction(bot_msg, activity_group_dict[name])
+        react = await self.bot.wait_for_reaction(
+            message=bot_msg, user=ctx.message.author, timeout=30,
+            emoji=activity_group_dict.values()
+        )
+        if react is None:
+            await self.bot.delete_message(bot_msg)
+            await self.bot.say("No game type selected!")
+            return None
+        reacts = {v: k for k, v in activity_group_dict.items()}
+        activity_type = reacts[react.reaction.emoji]
+        await self.bot.delete_message(bot_msg)
+        await self.bot.say(activity_type)
         ##############################
         # Get date and time for game #
         ##############################
-        bot_msg = None
-        rsp_msg = None
+        # bot_msg = None
+        # rsp_msg = None
         bot_msg = await self.bot.say(
             "Enter the time and date (ex. HH:MM am/pm tz MM/DD): ")
         rsp_msg = await self.bot.wait_for_message(author=author, timeout=45)
         if rsp_msg is None:
-            await self.bot.say("No game time provided!")
+            await self.bot.delete_message(bot_msg)
+            bot_msg = await self.bot.say("No game time provided!")
+            await asyncio.sleep(10)
+            await self.bot.delete_message(bot_msg)
             return
         start_time = self.game_time(rsp_msg)
         if start_time is None:
-            await self.bot.say("Something went wrong with parsing the date and time you entered!")
+            await self.bot.delete_message(bot_msg)
+            bot_msg = await self.bot.say("Something went wrong with parsing the date and time you entered!")
+            await asyncio.sleep(10)
+            await self.bot.delete_message(bot_msg)
+            await self.bot.delete_message(rsp_msg)
             return
         if start_time < creation_time:
-            bot_msg = await self.bot.say("You entered a time in the past!")
-            await asyncio.sleep(20)
             await self.bot.delete_message(bot_msg)
+            bot_msg = await self.bot.say("You entered a time in the past!")
+            await asyncio.sleep(10)
+            await self.bot.delete_message(bot_msg)
+            await self.bot.delete_message(rsp_msg)
             return
         await self.bot.delete_message(bot_msg)
         await self.bot.delete_message(rsp_msg)
@@ -248,9 +295,11 @@ class DestinyLFG():
             "id": self.settings[server.id]["next_id"],
             "creator": author.id,
             "create_time": creation_time,  # calendar.timegm(creation_time.utctimetuple()),
-            "event_name": name,
+            "event_name": game_name,
+            "activity": activity_type,
             "event_start_time": start_time,
             "description": desc,
+            "alert": False,
             "has_started": False,
             "participants": [author.id]
         }
@@ -273,6 +322,8 @@ class DestinyLFG():
             text="Created: " + dt.fromtimestamp(
                 new_event["create_time"], central).strftime("%m/%d/%Y %I:%M %p %Z ") +
                         "by " + author.name)
+        emb.add_field(
+            name="Activity: ", value=new_event["activity"])
         emb.add_field(
             name="Start time: ", value=dt.fromtimestamp(
                 new_event["event_start_time"], central).strftime("%I:%M %p %m/%d %Z  "))
@@ -337,10 +388,12 @@ class DestinyLFG():
                 emb = discord.Embed(title=event["event_name"],
                                     description=event["description"],
                                     color=discord.Colour(0x206694))
-                emb.add_field(name="Created by",
-                              value=(discord.utils.get(
-                                  self.bot.get_all_members(),
-                                  id=event["creator"])).name)
+                # emb.add_field(name="Created by",
+                #               value=(discord.utils.get(
+                #                   self.bot.get_all_members(),
+                #                   id=event["creator"])).name)
+                emb.add_field(
+                    name="Activity: ", value=event["activity"])
                 # emb.set_footer(
                 #     text="Created at (CT) " + dt.fromtimestamp(
                 #         event["create_time"], central).strftime("%m/%d/%Y %H:%M"))
@@ -491,12 +544,14 @@ class DestinyLFG():
                         emb = discord.Embed(title=event["event_name"],
                                             description=event["description"],
                                             color=discord.Colour(0x206694))
-                        emb.add_field(name="Created by",
-                                      value=(discord.utils.get(
-                                          self.bot.get_all_members(),
-                                          id=event["creator"])).name)
+                        # emb.add_field(name="Created by",
+                        #               value=(discord.utils.get(
+                        #                   self.bot.get_all_members(),
+                        #                   id=event["creator"])).name)
+                        emb.add_field(
+                            name="Activity: ", value=event["activity"])
                         pt_str = dt.fromtimestamp(
-                            event["create_time"], pacific).strftime("%m/%d %I:%M %p %Z")
+                            event["create_time"], pacific).strftime("%I:%M %p %m/%d %Z")
                         emb.add_field(
                             name="Start time ", value=pt_str)
                         emb.set_footer(
