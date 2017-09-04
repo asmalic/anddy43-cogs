@@ -10,12 +10,17 @@ import os
 import calendar
 import pytz
 import re
+import collections
 
-
+# numbs = collections.OrderedDict()
+# ⤴ -> join
+# ⤵ -> leave
 numbs = {
     "next": "➡",
     "back": "⬅",
-    "exit": "❌"
+    "exit": "❌",
+    "join": "⤴",
+    "leave": "⤵"
 }
 
 gametype = {
@@ -23,22 +28,19 @@ gametype = {
     "PvP": "🇵",  # P
 }
 
-pvp_activity = {
-    "Casual - PvP": "⚒",
-    "Competitive - PvP": "⚔",
-    "Trials of Osiris": "🥇",
-    "Other - PvP": "🇴"
-}
+pvp_activity = collections.OrderedDict()
+pvp_activity["Casual - PvP"] = "⚒"
+pvp_activity["Competitive - PvP"] = "⚔"
+pvp_activity["Trials"] = "🥇"
+pvp_activity["Other - PvP"] = "🇴"
 
-pve_activity = {
-    "Raid": "🇷",       # R
-    "Nightfall": "🇳",  # N
-    "Strikes": "🇸",    # S
-    "Missions": "🇲",   # M
-    "Patrol": "🇵",     # P
-    "Other": "🇴"       # O
-}
-
+pve_activity = collections.OrderedDict()
+pve_activity["Raid"] = "🇷"       # R
+pve_activity["Nightfall"] = "🇳"  # N
+pve_activity["Strikes"] = "🇸"    # S
+pve_activity["Missions"] = "🇲"   # M
+pve_activity["Patrol"] = "🇵"     # P
+pve_activity["Other"] = "🇴"      # O
 
 # Define timezones
 eastern = pytz.timezone('US/Eastern')
@@ -102,24 +104,31 @@ class DestinyLFG():
         """Menu control logic for this taken from
            https://github.com/Lunar-Dust/Dusty-Cogs/blob/master/menu/menu.py """
         emb = event_list[page]
+        emb_dict = emb.to_dict()
         if not message:
             message =\
                 await self.bot.send_message(ctx.message.channel, embed=emb)
             await self.bot.add_reaction(message, "⬅")
+            await self.bot.add_reaction(message, "⤴")
             await self.bot.add_reaction(message, "❌")
+            await self.bot.add_reaction(message, "⤵")
             await self.bot.add_reaction(message, "➡")
         else:
             message = await self.bot.edit_message(message, embed=emb)
         react = await self.bot.wait_for_reaction(
             message=message, user=ctx.message.author, timeout=timeout,
-            emoji=["➡", "⬅", "❌"]
+            emoji=["➡", "⬅", "❌", "⤴", "⤵"]
         )
         if react is None:
             await self.bot.remove_reaction(message, "⬅", self.bot.user)
+            await self.bot.remove_reaction(message, "⤴", self.bot.user)
             await self.bot.remove_reaction(message, "❌", self.bot.user)
+            await self.bot.remove_reaction(message, "⤵", self.bot.user)
             await self.bot.remove_reaction(message, "➡", self.bot.user)
+            await self.bot.delete_message(message)
             return None
         reacts = {v: k for k, v in numbs.items()}
+        react_user = react.user
         react = reacts[react.reaction.emoji]
         if react == "next":
             next_page = 0
@@ -137,6 +146,26 @@ class DestinyLFG():
                 next_page = page - 1
             return await self.games_menu(ctx, event_list, message=message,
                                          page=next_page, timeout=timeout)
+        elif react == "join":
+            await self.bot.say("You got here!!")
+            test_server = ctx.message.server
+            id_field = next(item for item in emb_dict['fields'] if item["name"] == "Game ID")
+            curr_id = int(id_field['value'])
+            # for key, value, in emb_dict.items():
+            #     print (key, value)
+            await self.addplayer(ctx, react_user, curr_id)
+            # return await gameslistlfg(ctx)
+            return await\
+                self.bot.delete_message(message)
+        elif react == "leave":
+            await self.bot.say("You got here - 2!!")
+            test_server = ctx.message.server
+            id_field = next(item for item in emb_dict['fields'] if item["name"] == "Game ID")
+            curr_id = int(id_field['value'])
+            await self.removeplayer(ctx, react_user, curr_id)
+            # return await gameslistlfg(ctx)
+            return await\
+                self.bot.delete_message(message)
         else:
             return await\
                 self.bot.delete_message(message)
@@ -352,6 +381,27 @@ class DestinyLFG():
             await self.bot.say("It appears as if that event does not exist!" +
                                "Perhaps it was cancelled or never created?")
 
+    async def addplayer(self, ctx, user, event_id: int):
+        """Join the specified lfg game"""
+        server = ctx.message.server
+        for event in self.events[server.id]:
+            if event["id"] == event_id:
+                if not event["has_started"]:
+                    if user.id not in event["participants"]:
+                        event["participants"].append(user.id)
+                        await self.bot.say("Joined the event!")
+                        dataIO.save_json(
+                            os.path.join("data", "destinylfg", "events.json"),
+                            self.events)
+                    else:
+                        await self.bot.say("You have already joined that event!")
+                else:
+                    await self.bot.say("That event has already started!")
+                break
+        else:
+            await self.bot.say("It appears as if that event does not exist!" +
+                               "Perhaps it was cancelled or never created?")
+
     @commands.command(pass_context=True)
     async def leavelfg(self, ctx, event_id: int):
         """Leave the specified event"""
@@ -363,6 +413,28 @@ class DestinyLFG():
                     if author.id in event["participants"]:
                         event["participants"].remove(author.id)
                         await self.bot.say("Removed you from that event!")
+                        dataIO.save_json(
+                            os.path.join("data", "destinylfg", "events.json"),
+                            self.events)
+                    else:
+                        await self.bot.say(
+                            "You aren't signed up for that event!")
+                else:
+                    await self.bot.say("That event already started!")
+                break
+
+    async def removeplayer(self, ctx, user, event_id: int):
+        """Leave the specified event"""
+        server = ctx.message.server
+        for event in self.events[server.id]:
+            if event["id"] == event_id:
+                if not event["has_started"]:
+                    if user.id in event["participants"]:
+                        event["participants"].remove(user.id)
+                        await self.bot.say("Removed you from that event!")
+                        dataIO.save_json(
+                            os.path.join("data", "destinylfg", "events.json"),
+                            self.events)
                     else:
                         await self.bot.say(
                             "You aren't signed up for that event!")
@@ -372,9 +444,7 @@ class DestinyLFG():
 
     @commands.command(pass_context=True)
     async def gameslistlfg(self, ctx, *, timezone: str="UTC"):
-        """List lfg for this server that have not started yet
-        Timezone needs to be something from the third column of
-        the large table at https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"""
+        """List lfg for this server that have not started yet"""
         server = ctx.message.server
         events = []
         for event in self.events[server.id]:
@@ -410,6 +480,8 @@ class DestinyLFG():
                 # emb.add_field(
                 #     name="Participant count", value=str(
                 #         len(event["participants"])))
+                if player_str == "":
+                    player_str = "No Participants"
                 emb.add_field(
                     name="Players", value=player_str)
                 # emb.add_field(
@@ -573,6 +645,10 @@ class DestinyLFG():
                         # emb.add_field(
                         #     name="Participant count", value=str(
                         #         len(event["participants"])))
+                        if player_mention_str == "Your game is starting! Join up: ":
+                            player_mention_str = "Game is starting, but no one has joined"
+                        if player_str == "":
+                            player_str = "No Participants"
                         emb.add_field(
                             name="Players", value=player_str)
                         try:
