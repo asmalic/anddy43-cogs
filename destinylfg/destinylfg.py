@@ -48,6 +48,8 @@ central = pytz.timezone('US/Central')
 mountain = pytz.timezone("US/Mountain")
 pacific = pytz.timezone('US/Pacific')
 
+lfg_messages = []
+
 """ Cog based heavily off of the cog
     https://github.com/palmtree5/palmtree5-cogs/blob/master/eventmaker/eventmaker.py
     Cog as been altered to cater more towards Destiny.
@@ -153,7 +155,8 @@ class DestinyLFG():
             curr_id = int(id_field['value'])
             # for key, value, in emb_dict.items():
             #     print (key, value)
-            await self.addplayer(ctx, react_user, curr_id)
+            await self.addplayer(ctx, react_user, curr_id, ctx.message.channel)
+            await self.list_games(ctx)
             # return await gameslistlfg(ctx)
             return await\
                 self.bot.delete_message(message)
@@ -162,13 +165,81 @@ class DestinyLFG():
             test_server = ctx.message.server
             id_field = next(item for item in emb_dict['fields'] if item["name"] == "Game ID")
             curr_id = int(id_field['value'])
-            await self.removeplayer(ctx, react_user, curr_id)
+            await self.removeplayer(ctx, react_user, curr_id, message.channel)
+            await self.list_games(ctx)
             # return await gameslistlfg(ctx)
             return await\
                 self.bot.delete_message(message)
         else:
             return await\
                 self.bot.delete_message(message)
+
+    async def event_menu(self, ctx, event_emb: discord.Embed,
+                         player_str: str,
+                         channel,
+                         message: discord.Message=None):
+        """Menu control logic for this taken from
+           https://github.com/Lunar-Dust/Dusty-Cogs/blob/master/menu/menu.py """
+        emb = event_emb
+        emb_dict = emb.to_dict()
+        id_field = next(item for item in emb_dict['fields'] if item["name"] == "Game ID")
+        curr_id = int(id_field['value'])
+        if not message:
+            message =\
+                await self.bot.send_message(channel, embed=emb)
+            await self.bot.add_reaction(message, "⤴")
+            await self.bot.add_reaction(message, "❌")
+            await self.bot.add_reaction(message, "⤵")
+        else:
+            message = await self.bot.edit_message(message, embed=emb)
+        await asyncio.sleep(1)
+        react = await self.bot.wait_for_reaction(
+            message=message,
+            emoji=["❌", "⤴", "⤵"]
+        )
+        # if react is None:
+        #     await self.bot.remove_reaction(message, "⤴", self.bot.user)
+        #     await self.bot.remove_reaction(message, "❌", self.bot.user)
+        #     await self.bot.remove_reaction(message, "⤵", self.bot.user)
+        #     await self.bot.delete_message(message)
+        #     return None
+        await self.bot.remove_reaction(message, react.reaction.emoji, react.user)
+        reacts = {v: k for k, v in numbs.items()}
+        react_user = react.user
+        print(react_user)
+        react = reacts[react.reaction.emoji]
+        print(react_user)
+        if react == "join":
+            await self.bot.send_message(channel, "You got here!! Event Menu")
+            await self.addplayer(ctx, react_user, curr_id, channel)
+            emb.remove_field(3)  # Remove players
+            player_name = react_user.name + " "
+            if player_str == "No Participants":
+                player_str = ""
+            player_str = player_str + player_name
+            emb.add_field(
+                name="Players", value=player_str)
+            # await self.list_games(ctx)
+            return await self.event_menu(ctx, emb, player_str, channel, message=message)
+        #     return await\
+        #         self.bot.delete_message(message)
+        elif react == "leave":
+            await self.bot.send_message(channel, "You got here - Event Menu 2!!")
+            await self.removeplayer(ctx, react_user, curr_id, channel)
+            emb.remove_field(3)  # Remove players
+            player_name = react_user.name + " "
+            player_str = player_str.replace(player_name, "")
+            if player_str == "":
+                player_str = "No Participants"
+            emb.add_field(
+                name="Players", value=player_str)
+            # await self.list_games(ctx)
+            return await self.event_menu(ctx, emb, player_str, channel, message=message)
+        #     return await\
+        #         self.bot.delete_message(message)
+        # else:
+        #     return await\
+        #         self.bot.delete_message(message)
 
     @commands.command(pass_context=True)
     async def lfgcreate(self, ctx):
@@ -358,6 +429,7 @@ class DestinyLFG():
                 new_event["event_start_time"], central).strftime("%I:%M %p %m/%d %Z  "))
         emb.add_field(name="Game ID", value=str(new_event["id"]))
         await self.bot.say(embed=emb)
+        await self.list_games(ctx)
 
     @commands.command(pass_context=True)
     async def joinlfg(self, ctx, event_id: int):
@@ -381,7 +453,7 @@ class DestinyLFG():
             await self.bot.say("It appears as if that event does not exist!" +
                                "Perhaps it was cancelled or never created?")
 
-    async def addplayer(self, ctx, user, event_id: int):
+    async def addplayer(self, ctx, user, event_id: int, channel):
         """Join the specified lfg game"""
         server = ctx.message.server
         for event in self.events[server.id]:
@@ -389,18 +461,23 @@ class DestinyLFG():
                 if not event["has_started"]:
                     if user.id not in event["participants"]:
                         event["participants"].append(user.id)
-                        await self.bot.say("Joined the event!")
+                        # await self.bot.say("Joined the event!")
+                        await self.bot.send_message(channel, "Joined the event!")
                         dataIO.save_json(
                             os.path.join("data", "destinylfg", "events.json"),
                             self.events)
                     else:
-                        await self.bot.say("You have already joined that event!")
+                        # await self.bot.say("You have already joined that event!")
+                        await self.bot.send_message(channel, "You have already joined that event!")
                 else:
-                    await self.bot.say("That event has already started!")
+                    # await self.bot.say("That event has already started!")
+                    await self.bot.send_message(channel, "That event has already started!")
                 break
         else:
-            await self.bot.say("It appears as if that event does not exist!" +
-                               "Perhaps it was cancelled or never created?")
+            # await self.bot.say("It appears as if that event does not exist!" +
+            #                    "Perhaps it was cancelled or never created?")
+            await self.bot.send_message(channel, "It appears as if that event does not exist!" +
+                                        "Perhaps it was cancelled or never created?")
 
     @commands.command(pass_context=True)
     async def leavelfg(self, ctx, event_id: int):
@@ -423,7 +500,7 @@ class DestinyLFG():
                     await self.bot.say("That event already started!")
                 break
 
-    async def removeplayer(self, ctx, user, event_id: int):
+    async def removeplayer(self, ctx, user, event_id: int, channel):
         """Leave the specified event"""
         server = ctx.message.server
         for event in self.events[server.id]:
@@ -431,16 +508,25 @@ class DestinyLFG():
                 if not event["has_started"]:
                     if user.id in event["participants"]:
                         event["participants"].remove(user.id)
-                        await self.bot.say("Removed you from that event!")
+                        # await self.bot.say("Removed you from that event!")
+                        await self.bot.send_message(channel, "Removed you from that event!")
                         dataIO.save_json(
                             os.path.join("data", "destinylfg", "events.json"),
                             self.events)
                     else:
-                        await self.bot.say(
-                            "You aren't signed up for that event!")
+                        # await self.bot.say(
+                        #    "You aren't signed up for that event!")
+                        await self.bot.send_message(channel,
+                                                    "You aren't signed up for that event!")
                 else:
-                    await self.bot.say("That event already started!")
+                    # await self.bot.say("That event already started!")
+                    await self.bot.send_message(channel, "That event already started!")
                 break
+        else:
+            # await self.bot.say("It appears as if that event does not exist!" +
+            #                    "Perhaps it was cancelled or never created?")
+            await self.bot.send_message(channel, "It appears as if that event does not exist!" +
+                                        "Perhaps it was cancelled or never created?")
 
     @commands.command(pass_context=True)
     async def gameslistlfg(self, ctx, *, timezone: str="UTC"):
@@ -579,6 +665,18 @@ class DestinyLFG():
                          self.settings)
         await self.bot.say("Channel set to {}".format(channel.mention))
 
+    @game_set.command(pass_context=True, name="lfg_channel")
+    @checks.admin_or_permissions(manage_server=True)
+    async def game_set_lfg_channel(self, ctx, channel: discord.Channel):
+        """Set the channel used for listing games. If 'channel'
+        is selected for reminders on event creation, this channel
+        will be used. Default: the server's default channel"""
+        server = ctx.message.server
+        self.settings[server.id]["lfg_channel"] = channel.id
+        dataIO.save_json(os.path.join("data", "destinylfg", "settings.json"),
+                         self.settings)
+        await self.bot.say("LFG Channel set to {}".format(channel.mention))
+
     @game_set.command(pass_context=True, name="role")
     @checks.admin_or_permissions(manage_server=True)
     async def game_set_role(self, ctx, *, role: str=None):
@@ -598,6 +696,60 @@ class DestinyLFG():
                 os.path.join("data", "destinylfg", "settings.json"),
                 self.settings)
             await self.bot.say("Role unset!")
+
+    async def post_event(self, ctx, event, channel):
+        await self.bot.send_message(channel, "got here")
+        emb = discord.Embed(title=event["event_name"],
+                            description=event["description"],
+                            color=discord.Colour(0x206694))
+        emb.add_field(
+            name="Activity: ", value=event["activity"])
+        pt_str = dt.fromtimestamp(
+            event["create_time"], pacific).strftime("%I:%M %p %m/%d %Z")
+        emb.add_field(
+            name="Start time ", value=pt_str)
+        emb.set_footer(
+            text="Created: " +
+            dt.fromtimestamp(
+                event["create_time"], central).strftime(
+                    "%m/%d/%Y %I:%M %p %Z"))
+        emb.add_field(name="Game ID", value=str(event["id"]))
+        player_str = ""
+        for user in event["participants"]:
+            target = discord.utils.get(
+                self.bot.get_all_members(), id=user)
+            player_str += target.name + " "
+        if player_str == "":
+            player_str = "No Participants"
+        emb.add_field(
+            name="Players", value=player_str)
+        # await self.bot.send_message(channel, embed=emb)
+        await self.event_menu(ctx, emb, player_str, channel)
+
+    async def list_games(self, ctx):
+        """ Lists games in specified channel """
+        server = ctx.message.server
+        # lfg_messages = []
+        if "lfg_channel" not in self.settings[server.id]:
+            return await self.bot.say("Need to set LFG Channel")
+        await self.bot.wait_until_ready()
+        print (server)
+        channel = discord.utils.get(self.bot.get_all_channels(),
+                                    id=self.settings[server.id]["lfg_channel"])
+        await self.bot.say("LFG Channel is already set up!")
+        asyncio.gather(*lfg_messages).cancel()
+        await self.bot.purge_from(channel)
+        # asyncio.gather(*asyncio.Task.all_tasks(), loop=lfg_loop).cancel()
+        for server in list(self.events.keys()):
+            for event in self.events[server]:
+                if not event["has_started"]:
+                    # lfg_loop.create_task(await self.bot.say("This is an event"))
+                    # lfg_message = self.bot.send_message(channel, "This is an event")
+                    lfg_message = self.post_event(ctx, event, channel)
+                    # self.bot.loop.create_task(self.bot.send_message(channel, "This is an event"))
+                    self.bot.loop.create_task(lfg_message)
+                    # lfg_message = lfg_loop.create_task(await self.bot.say("This is an event"))
+                    lfg_messages.append(lfg_message)
 
     async def check_games(self):
         """Event loop"""
@@ -726,6 +878,7 @@ def setup(bot):
     loop = asyncio.get_event_loop()
     loop.create_task(n.check_games())
     loop.create_task(n.confirm_server_setup())
+    lfg_loop = asyncio.get_event_loop()
     bot.add_listener(n.server_join, "on_server_join")
     bot.add_listener(n.server_leave, "on_server_remove")
     bot.add_cog(n)
